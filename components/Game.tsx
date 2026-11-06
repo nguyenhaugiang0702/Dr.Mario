@@ -3,6 +3,12 @@ import { useEffect, useRef, useState } from 'react';
 import { State, newGame, move, rotate, stepDown, update } from '../lib/engine';
 import { drawField, drawDoc, drawMag, drawToss } from '../lib/draw';
 import {
+  saveGameSession,
+  loadSavedGameSession,
+  clearSavedGameSession,
+  type SavedGame,
+} from '../lib/storage';
+import {
   playMove,
   playRotate,
   playToss,
@@ -33,9 +39,14 @@ export default function Game() {
   const [soundOn, setSoundOn] = useState(true); // Mặc định luôn bật loa khi hiển thị trang chủ
   const [musicType, setMusicType] = useState<MusicType>('fever');
   const [ui, setUi] = useState({ ph: 'toss', score: 0, top: 0, viruses: 0 });
+  const [savedGame, setSavedGame] = useState<SavedGame | null>(null);
 
   const screenRef = useRef<'home' | 'game'>('home');
   screenRef.current = screen;
+
+  const levelRef = useRef(level); levelRef.current = level;
+  const speedRef = useRef(speed); speedRef.current = speed;
+  const musicTypeRef = useRef(musicType); musicTypeRef.current = musicType;
 
   const isTransitioningRef = useRef(false);
 
@@ -63,6 +74,9 @@ export default function Game() {
       const next = !prev;
       if (next) {
         pauseGameMusic();
+        if (S.current && S.current.ph !== 'won' && S.current.ph !== 'lost') {
+          saveGameSession(S.current, levelRef.current, speedRef.current, musicTypeRef.current);
+        }
       } else {
         resumeGameMusic();
       }
@@ -74,12 +88,18 @@ export default function Game() {
     setPlaying(false);
     setPaused(false);
     reset(level, speed);
+    clearSavedGameSession();
+    setSavedGame(null);
     playTitleMusic();
   };
 
   const goToHome = () => {
+    if (playing && S.current && S.current.ph !== 'won' && S.current.ph !== 'lost') {
+      saveGameSession(S.current, levelRef.current, speedRef.current, musicTypeRef.current);
+    }
     setPlaying(false);
     setPaused(false);
+    setSavedGame(loadSavedGameSession());
     setScreen('home');
     stopAllMusic();
   };
@@ -107,6 +127,57 @@ export default function Game() {
     }
   };
 
+  // Người dùng bấm nút "TIẾP TỤC" ở trang chủ: khôi phục ván chơi dở dang
+  const handleResumeGame = (e?: React.SyntheticEvent | Event) => {
+    if (e) {
+      try { e.preventDefault(); e.stopPropagation(); } catch {}
+    }
+    const saved = savedGame || loadSavedGameSession();
+    if (!saved) {
+      handleStartFromHome(e);
+      return;
+    }
+
+    if (isTransitioningRef.current) return;
+    isTransitioningRef.current = true;
+    setTimeout(() => { isTransitioningRef.current = false; }, 350);
+
+    // Khôi phục trạng thái ván đấu
+    S.current = saved.state;
+    setLevel(saved.level);
+    setSpeed(saved.speed);
+    setMusicType(saved.musicType);
+    setUi({
+      ph: saved.state.ph,
+      score: saved.state.score,
+      top: saved.state.top,
+      viruses: saved.state.viruses,
+    });
+
+    setScreen('game');
+    setPlaying(true);
+    setPaused(false);
+    setSoundOn(true);
+
+    try {
+      unlockAudio();
+      setMuted(false);
+      playGameMusic(saved.musicType);
+    } catch (err) {
+      console.warn('Audio resume warning:', err);
+    }
+  };
+
+  // Người dùng chọn "VÁN MỚI" khi đang có bản lưu
+  const handleNewGameFromHome = (e?: React.SyntheticEvent | Event) => {
+    if (e) {
+      try { e.preventDefault(); e.stopPropagation(); } catch {}
+    }
+    clearSavedGameSession();
+    setSavedGame(null);
+    handleStartFromHome(e);
+  };
+
   useEffect(() => {
     try { top.current = +(localStorage.getItem('drm-top') || 0); } catch { }
     // Mặc định luôn bật loa khi vào ứng dụng
@@ -115,6 +186,12 @@ export default function Game() {
 
     const initialMusic = getMusicChoice();
     setMusicType(initialMusic);
+
+    // Kiểm tra bản lưu tự động khi tải trang
+    const saved = loadSavedGameSession();
+    if (saved) {
+      setSavedGame(saved);
+    }
 
     let raf = 0, last = performance.now(), sig = '';
 
@@ -141,7 +218,15 @@ export default function Game() {
         }
 
         sig = n; setUi({ ph: s.ph, score: s.score, top: s.top, viruses: s.viruses });
-        if (s.ph === 'won' || s.ph === 'lost') { top.current = s.top; try { localStorage.setItem('drm-top', String(s.top)); } catch { } }
+        if (s.ph === 'won' || s.ph === 'lost') {
+          top.current = s.top;
+          try { localStorage.setItem('drm-top', String(s.top)); } catch { }
+          clearSavedGameSession();
+          setSavedGame(null);
+        } else if (run.current) {
+          // Tự động lưu tiến trình game mỗi khi trạng thái thay đổi
+          saveGameSession(s, levelRef.current, speedRef.current, musicTypeRef.current);
+        }
       }
       raf = requestAnimationFrame(loop);
     };
@@ -151,7 +236,11 @@ export default function Game() {
       if (screenRef.current === 'home') {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          handleStartFromHome();
+          if (savedGame) {
+            handleResumeGame();
+          } else {
+            handleStartFromHome();
+          }
         }
         return;
       }
@@ -178,15 +267,27 @@ export default function Game() {
       if (document.hidden && isPlaying.current) {
         setPaused(true);
         pauseGameMusic();
+        if (S.current && S.current.ph !== 'won' && S.current.ph !== 'lost') {
+          saveGameSession(S.current, levelRef.current, speedRef.current, musicTypeRef.current);
+        }
+      }
+    };
+
+    const handleBeforeUnload = () => {
+      if (isPlaying.current && S.current && S.current.ph !== 'won' && S.current.ph !== 'lost') {
+        saveGameSession(S.current, levelRef.current, speedRef.current, musicTypeRef.current);
       }
     };
 
     addEventListener('keydown', key);
     document.addEventListener('visibilitychange', hide);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     return () => {
       cancelAnimationFrame(raf);
       removeEventListener('keydown', key);
       document.removeEventListener('visibilitychange', hide);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);
 
@@ -223,27 +324,40 @@ export default function Game() {
   });
 
   const start = (l = level) => {
+    clearSavedGameSession();
+    setSavedGame(null);
     reset(l, speed);
     setPlaying(true);
     setPaused(false);
     playGameMusic(musicType);
     playToss();
+    saveGameSession(S.current, l, speed, musicType);
   };
   const over = playing && (ui.ph === 'won' || ui.ph === 'lost');
 
   return (
     <main className="app">
       {screen === 'home' ? (
-        /* MÀN HÌNH TRANG CHỦ: CHỈ SHOW NÚT CHƠI & MẶC ĐỊNH BẬT LOA */
+        /* MÀN HÌNH TRANG CHỦ: SHOW NÚT TIẾP TỤC (NẾU CÓ BẢN LƯU) HOẶC CHƠI */
         <section
           className="home-screen"
           onClick={(e) => {
-            if ((e.target as HTMLElement).closest('.sound-btn')) return;
-            handleStartFromHome(e);
+            const target = e.target as HTMLElement;
+            if (target.closest('.sound-btn') || target.closest('button')) return;
+            if (savedGame) {
+              handleResumeGame(e);
+            } else {
+              handleStartFromHome(e);
+            }
           }}
           onPointerDown={(e) => {
-            if ((e.target as HTMLElement).closest('.sound-btn')) return;
-            handleStartFromHome(e);
+            const target = e.target as HTMLElement;
+            if (target.closest('.sound-btn') || target.closest('button')) return;
+            if (savedGame) {
+              handleResumeGame(e);
+            } else {
+              handleStartFromHome(e);
+            }
           }}
         >
           <div className="home-top-bar">
@@ -290,16 +404,47 @@ export default function Game() {
           </div>
 
           <div className="home-action">
-            <button
-              className="home-play-btn"
-              onClick={handleStartFromHome}
-              onPointerDown={handleStartFromHome}
-              aria-label="Chơi game"
-            >
-              <span className="play-triangle">▶</span>
-              <span>CHƠI</span>
-            </button>
-            <div className="home-hint">Chạm vào màn hình để bắt đầu</div>
+            {savedGame ? (
+              /* Có ván chơi đang dở: hiển thị Tiếp tục và Ván mới */
+              <>
+                <button
+                  className="home-play-btn home-resume-btn"
+                  onClick={handleResumeGame}
+                  onPointerDown={handleResumeGame}
+                  aria-label="Tiếp tục ván chơi"
+                >
+                  <span className="play-triangle">▶</span>
+                  <span>TIẾP TỤC</span>
+                </button>
+
+                <div className="saved-info-tag">
+                  Màn {savedGame.level} • Còn {savedGame.state.viruses} virus • {savedGame.state.score} điểm
+                </div>
+
+                <button
+                  className="home-newgame-btn"
+                  onClick={handleNewGameFromHome}
+                  onPointerDown={handleNewGameFromHome}
+                  aria-label="Chơi ván mới"
+                >
+                  <span>VÁN MỚI</span>
+                </button>
+              </>
+            ) : (
+              /* Chưa có ván dở: hiển thị nút Chơi chuẩn */
+              <>
+                <button
+                  className="home-play-btn"
+                  onClick={handleStartFromHome}
+                  onPointerDown={handleStartFromHome}
+                  aria-label="Chơi game"
+                >
+                  <span className="play-triangle">▶</span>
+                  <span>CHƠI</span>
+                </button>
+                <div className="home-hint">Chạm vào màn hình để bắt đầu</div>
+              </>
+            )}
           </div>
 
           <div className="home-footer">
