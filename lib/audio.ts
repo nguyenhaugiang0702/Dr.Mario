@@ -1,6 +1,42 @@
-// Hệ thống âm thanh 8-bit Retro sử dụng Web Audio API (không cần tải file ngoài)
+// Hệ thống âm thanh Dr. Mario NES (Web Audio API synth cho SFX + MP3 cho BGM & Jingles)
+
+export type MusicType = 'fever' | 'chill' | 'off';
+
 let ctx: AudioContext | null = null;
 let muted = false;
+let musicChoice: MusicType = 'fever';
+
+// Các đường dẫn file nhạc gốc Dr. Mario NES trong public/audio
+const AUDIO_PATHS = {
+  title: '/audio/01. Title Screen.mp3',
+  fever: '/audio/03. Fever.mp3',
+  clear: '/audio/04. Fever Clear.mp3',
+  chill: '/audio/05. Chill.mp3',
+  gameover: '/audio/07. Game Over.mp3',
+  pause: '/audio/14. Pause.mp3',
+};
+
+// Cache các đối tượng Audio
+const audioCache: Partial<Record<keyof typeof AUDIO_PATHS, HTMLAudioElement>> = {};
+
+function getOrCreateAudio(key: keyof typeof AUDIO_PATHS): HTMLAudioElement | null {
+  if (typeof window === 'undefined') return null;
+  if (!audioCache[key]) {
+    try {
+      const el = new Audio(encodeURI(AUDIO_PATHS[key]));
+      el.preload = 'auto';
+      audioCache[key] = el;
+    } catch {
+      return null;
+    }
+  }
+  return audioCache[key] || null;
+}
+
+// BGM đang phát
+let currentBgmAudio: HTMLAudioElement | null = null;
+let currentBgmKey: 'title' | 'fever' | 'chill' | null = null;
+let currentJingleAudio: HTMLAudioElement | null = null;
 
 export function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -16,15 +52,11 @@ export function getAudioContext(): AudioContext | null {
   return ctx;
 }
 
-export function isMuted(): boolean {
-  return muted;
+export function unlockAudio() {
+  getAudioContext();
 }
 
-export function toggleMute(): boolean {
-  muted = !muted;
-  try {
-    localStorage.setItem('drm-mute', muted ? '1' : '0');
-  } catch {}
+export function isMuted(): boolean {
   return muted;
 }
 
@@ -32,6 +64,44 @@ export function initMute(): boolean {
   try {
     muted = localStorage.getItem('drm-mute') === '1';
   } catch {}
+  return muted;
+}
+
+export function getMusicChoice(): MusicType {
+  try {
+    const saved = localStorage.getItem('drm-music') as MusicType;
+    if (saved === 'fever' || saved === 'chill' || saved === 'off') {
+      musicChoice = saved;
+    }
+  } catch {}
+  return musicChoice;
+}
+
+export function setMusicChoice(choice: MusicType) {
+  musicChoice = choice;
+  try {
+    localStorage.setItem('drm-music', choice);
+  } catch {}
+}
+
+export function toggleMute(isPlaying = false, isPaused = false): boolean {
+  muted = !muted;
+  try {
+    localStorage.setItem('drm-mute', muted ? '1' : '0');
+  } catch {}
+
+  if (muted) {
+    // Tắt toàn bộ âm thanh ngay lập tức
+    if (currentBgmAudio) currentBgmAudio.pause();
+    if (currentJingleAudio) currentJingleAudio.pause();
+  } else {
+    // Mở lại âm thanh phù hợp với trạng thái hiện tại
+    if (isPlaying) {
+      if (!isPaused) resumeGameMusic();
+    } else {
+      playTitleMusic();
+    }
+  }
   return muted;
 }
 
@@ -43,6 +113,160 @@ export function haptic(ms = 12) {
     } catch {}
   }
 }
+
+// ========================================================
+// QUẢN LÝ NHẠC NỀN (BGM) & HIỆU ỨNG MP3
+// ========================================================
+
+/** Dừng mọi bản nhạc BGM và Jingle đang phát */
+export function stopAllMusic() {
+  if (currentBgmAudio) {
+    currentBgmAudio.pause();
+    currentBgmAudio.currentTime = 0;
+    currentBgmAudio = null;
+  }
+  if (currentJingleAudio) {
+    currentJingleAudio.pause();
+    currentJingleAudio.currentTime = 0;
+    currentJingleAudio = null;
+  }
+  currentBgmKey = null;
+}
+
+/** Phát nhạc màn hình chờ / Menu (Title Screen) */
+export function playTitleMusic() {
+  if (typeof window === 'undefined') return;
+  if (currentJingleAudio) {
+    currentJingleAudio.pause();
+    currentJingleAudio = null;
+  }
+  if (currentBgmKey === 'title' && currentBgmAudio && !currentBgmAudio.paused) {
+    return;
+  }
+
+  stopAllMusic();
+  const audio = getOrCreateAudio('title');
+  if (!audio) return;
+
+  audio.loop = true;
+  audio.volume = 0.38;
+  currentBgmAudio = audio;
+  currentBgmKey = 'title';
+
+  if (!muted) {
+    audio.play().catch(() => {});
+  }
+}
+
+/** Bắt đầu phát nhạc trong trận đấu (Fever hoặc Chill) */
+export function playGameMusic(choice: MusicType = musicChoice) {
+  if (typeof window === 'undefined') return;
+  setMusicChoice(choice);
+
+  if (currentJingleAudio) {
+    currentJingleAudio.pause();
+    currentJingleAudio = null;
+  }
+
+  if (choice === 'off') {
+    if (currentBgmAudio) {
+      currentBgmAudio.pause();
+      currentBgmAudio.currentTime = 0;
+      currentBgmAudio = null;
+    }
+    currentBgmKey = null;
+    return;
+  }
+
+  const key = choice === 'chill' ? 'chill' : 'fever';
+  if (currentBgmKey === key && currentBgmAudio && !currentBgmAudio.paused) {
+    return;
+  }
+
+  stopAllMusic();
+  const audio = getOrCreateAudio(key);
+  if (!audio) return;
+
+  audio.loop = true;
+  audio.volume = 0.42;
+  currentBgmAudio = audio;
+  currentBgmKey = key;
+
+  if (!muted) {
+    audio.play().catch(() => {});
+  }
+}
+
+/** Tạm dừng nhạc khi Pause game */
+export function pauseGameMusic() {
+  if (currentBgmAudio && !currentBgmAudio.paused) {
+    currentBgmAudio.pause();
+  }
+}
+
+/** Tiếp tục phát nhạc khi Unpause game */
+export function resumeGameMusic() {
+  if (muted || musicChoice === 'off') return;
+  if (currentBgmAudio && currentBgmAudio.paused) {
+    currentBgmAudio.play().catch(() => {});
+  } else if (!currentBgmAudio && currentBgmKey) {
+    playGameMusic(currentBgmKey as MusicType);
+  }
+}
+
+/** Âm thanh khi bấm Tạm dừng (Pause jingle) */
+export function playPauseSound() {
+  if (muted || typeof window === 'undefined') return;
+  const audio = getOrCreateAudio('pause');
+  if (!audio) return;
+  try {
+    audio.currentTime = 0;
+    audio.volume = 0.65;
+    audio.play().catch(() => {});
+  } catch {}
+}
+
+/** Nhạc chiến thắng khi diệt hết virus (04. Fever Clear.mp3) */
+export function playWin() {
+  if (muted) return;
+  if (currentBgmAudio) {
+    currentBgmAudio.pause();
+  }
+  const audio = getOrCreateAudio('clear');
+  if (audio) {
+    try {
+      audio.currentTime = 0;
+      audio.volume = 0.65;
+      currentJingleAudio = audio;
+      audio.play().catch(() => playWinSynth());
+      return;
+    } catch {}
+  }
+  playWinSynth();
+}
+
+/** Nhạc khi thua cuộc (07. Game Over.mp3) */
+export function playLose() {
+  if (muted) return;
+  if (currentBgmAudio) {
+    currentBgmAudio.pause();
+  }
+  const audio = getOrCreateAudio('gameover');
+  if (audio) {
+    try {
+      audio.currentTime = 0;
+      audio.volume = 0.65;
+      currentJingleAudio = audio;
+      audio.play().catch(() => playLoseSynth());
+      return;
+    } catch {}
+  }
+  playLoseSynth();
+}
+
+// ========================================================
+// HIỆU ỨNG TỨC THỜI (SFX) DÙNG WEB AUDIO API (KHÔNG TRỄ)
+// ========================================================
 
 // 1. Tiếng di chuyển viên thuốc sang trái/phải
 export function playMove() {
@@ -144,16 +368,15 @@ export function playClear(combo = 1) {
   });
 }
 
-// 6. Nhạc chiến thắng khi diệt hết virus
-export function playWin() {
-  if (muted) return;
+// Fallback Synth Win
+function playWinSynth() {
   const ac = getAudioContext();
   if (!ac) return;
   const melody = [
-    { f: 523.25, d: 0.12 }, // C5
-    { f: 659.25, d: 0.12 }, // E5
-    { f: 783.99, d: 0.12 }, // G5
-    { f: 1046.5, d: 0.3 },  // C6
+    { f: 523.25, d: 0.12 },
+    { f: 659.25, d: 0.12 },
+    { f: 783.99, d: 0.12 },
+    { f: 1046.5, d: 0.3 },
   ];
   let t = ac.currentTime + 0.05;
   melody.forEach((note) => {
@@ -171,14 +394,13 @@ export function playWin() {
   });
 }
 
-// 7. Nhạc thua cuộc (Game Over)
-export function playLose() {
-  if (muted) return;
+// Fallback Synth Lose
+function playLoseSynth() {
   const ac = getAudioContext();
   if (!ac) return;
-  const notes = [440, 415.3, 392, 349.23]; // A4, Ab4, G4, F4
+  const notes = [440, 415.3, 392, 349.23];
   let t = ac.currentTime + 0.05;
-  notes.forEach((freq, i) => {
+  notes.forEach((freq) => {
     const osc = ac.createOscillator();
     const gain = ac.createGain();
     osc.type = 'sawtooth';
@@ -192,4 +414,3 @@ export function playLose() {
     t += 0.22;
   });
 }
-

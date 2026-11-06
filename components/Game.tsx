@@ -9,9 +9,18 @@ import {
   playClear,
   playWin,
   playLose,
+  playPauseSound,
+  playTitleMusic,
+  playGameMusic,
+  pauseGameMusic,
+  resumeGameMusic,
   haptic,
   toggleMute,
   initMute,
+  getMusicChoice,
+  setMusicChoice,
+  unlockAudio,
+  type MusicType,
 } from '../lib/audio';
 
 const SPEEDS = ['CHẬM', 'VỪA', 'NHANH'];
@@ -20,6 +29,7 @@ export default function Game() {
   const [level, setLevel] = useState(10), [speed, setSpeed] = useState(1);
   const [playing, setPlaying] = useState(false), [paused, setPaused] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
+  const [musicType, setMusicType] = useState<MusicType>('fever');
   const [ui, setUi] = useState({ ph: 'toss', score: 0, top: 0, viruses: 0 });
   const S = useRef<State>(newGame(10, 1)), top = useRef(0), run = useRef(false), isPlaying = useRef(false);
   const cf = useRef<HTMLCanvasElement>(null), cd = useRef<HTMLCanvasElement>(null), cm = useRef<HTMLCanvasElement>(null);
@@ -38,9 +48,44 @@ export default function Game() {
   const A = act((s) => { rotate(s, true); playRotate(); haptic(15); });
   const B = act((s) => { rotate(s, false); playRotate(); haptic(15); });
 
+  const togglePause = () => {
+    if (!isPlaying.current) return;
+    playPauseSound();
+    setPaused((prev) => {
+      const next = !prev;
+      if (next) {
+        pauseGameMusic();
+      } else {
+        resumeGameMusic();
+      }
+      return next;
+    });
+  };
+
+  const backToMenu = () => {
+    setPlaying(false);
+    setPaused(false);
+    reset(level, speed);
+    playTitleMusic();
+  };
+
   useEffect(() => {
     try { top.current = +(localStorage.getItem('drm-top') || 0); } catch { }
     setSoundOn(!initMute());
+    const initialMusic = getMusicChoice();
+    setMusicType(initialMusic);
+
+    // Mở khóa âm thanh và phát nhạc Title khi người dùng chạm hoặc bấm phím lần đầu
+    const unlock = () => {
+      unlockAudio();
+      if (!isPlaying.current) {
+        playTitleMusic();
+      }
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
 
     let raf = 0, last = performance.now(), sig = '';
     const ctx = (r: React.RefObject<HTMLCanvasElement | null>) => r.current!.getContext('2d')!;
@@ -75,7 +120,7 @@ export default function Game() {
       if (e.key === 'p' || e.key === 'P' || e.key === ' ') {
         if (isPlaying.current) {
           e.preventDefault();
-          setPaused((prev) => !prev);
+          togglePause();
         }
         return;
       }
@@ -90,9 +135,21 @@ export default function Game() {
       e.preventDefault();
     };
 
-    const hide = () => document.hidden && setPaused(true);
-    addEventListener('keydown', key); document.addEventListener('visibilitychange', hide);
-    return () => { cancelAnimationFrame(raf); removeEventListener('keydown', key); document.removeEventListener('visibilitychange', hide); };
+    const hide = () => {
+      if (document.hidden && isPlaying.current) {
+        setPaused(true);
+        pauseGameMusic();
+      }
+    };
+
+    addEventListener('keydown', key);
+    document.addEventListener('visibilitychange', hide);
+    return () => {
+      cancelAnimationFrame(raf);
+      removeEventListener('keydown', key);
+      document.removeEventListener('visibilitychange', hide);
+      window.removeEventListener('pointerdown', unlock);
+    };
   }, []);
 
   const hold = (fn: () => void, ms: number) => ({
@@ -131,6 +188,7 @@ export default function Game() {
     reset(l, speed);
     setPlaying(true);
     setPaused(false);
+    playGameMusic(musicType);
     playToss();
   };
   const over = playing && (ui.ph === 'won' || ui.ph === 'lost');
@@ -142,7 +200,7 @@ export default function Game() {
         <div className="title-row">
           <button
             className="sound-btn"
-            onClick={() => setSoundOn(!toggleMute())}
+            onClick={() => setSoundOn(!toggleMute(playing, paused))}
             aria-label="Bật tắt âm thanh"
             title="Bật/Tắt âm thanh"
           >
@@ -194,11 +252,25 @@ export default function Game() {
                   </button>
                 ))}
               </div>
+              <div className="row music-row">
+                {(['fever', 'chill', 'off'] as const).map((m) => (
+                  <button
+                    key={m}
+                    className={m === musicType ? 'on' : ''}
+                    onClick={() => {
+                      setMusicType(m);
+                      setMusicChoice(m);
+                    }}
+                  >
+                    {m === 'fever' ? 'FEVER' : m === 'chill' ? 'CHILL' : 'TẮT NHẠC'}
+                  </button>
+                ))}
+              </div>
               <button className="go" onClick={() => start()}>BẮT ĐẦU</button>
             </div>
           )}
           {playing && paused && (
-            <div className="pause-overlay" onClick={() => setPaused(false)} role="button" aria-label="Tiếp tục chơi">
+            <div className="pause-overlay" onClick={togglePause} role="button" aria-label="Tiếp tục chơi">
               <div className="pause-card">
                 <div className="pause-icon-circle">
                   <div className="pause-bars">
@@ -223,14 +295,14 @@ export default function Game() {
                   CHƠI LẠI
                 </button>
               )}
-              <button onClick={() => { setPlaying(false); reset(level, speed); }}>MENU</button>
+              <button onClick={backToMenu}>MENU</button>
             </div>
           )}
         </div>
 
         <div className="bar">
-          <button onClick={() => playing && setPaused(!paused)}>{paused ? 'Tiếp tục' : 'Tạm dừng'}</button>
-          <button onClick={() => { setPlaying(false); setPaused(false); reset(level, speed); }}>Menu</button>
+          <button onClick={() => playing && togglePause()}>{paused ? 'Tiếp tục' : 'Tạm dừng'}</button>
+          <button onClick={backToMenu}>Menu</button>
         </div>
       </section>
 
