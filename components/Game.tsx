@@ -39,7 +39,7 @@ export default function Game() {
   const B = act((s) => { rotate(s, false); playRotate(); haptic(15); });
 
   useEffect(() => {
-    try { top.current = +(localStorage.getItem('drm-top') || 0); } catch {}
+    try { top.current = +(localStorage.getItem('drm-top') || 0); } catch { }
     setSoundOn(!initMute());
 
     let raf = 0, last = performance.now(), sig = '';
@@ -65,7 +65,7 @@ export default function Game() {
         }
 
         sig = n; setUi({ ph: s.ph, score: s.score, top: s.top, viruses: s.viruses });
-        if (s.ph === 'won' || s.ph === 'lost') { top.current = s.top; try { localStorage.setItem('drm-top', String(s.top)); } catch {} }
+        if (s.ph === 'won' || s.ph === 'lost') { top.current = s.top; try { localStorage.setItem('drm-top', String(s.top)); } catch { } }
       }
       raf = requestAnimationFrame(loop);
     };
@@ -100,7 +100,7 @@ export default function Game() {
       e.preventDefault();
       const btn = e.currentTarget;
       const pid = e.pointerId;
-      try { btn.setPointerCapture(pid); } catch {}
+      try { btn.setPointerCapture(pid); } catch { }
       fn();
       const id = setInterval(fn, ms);
       const stop = (ev: PointerEvent) => {
@@ -108,7 +108,7 @@ export default function Game() {
           clearInterval(id);
           try {
             if (btn.hasPointerCapture(pid)) btn.releasePointerCapture(pid);
-          } catch {}
+          } catch { }
           window.removeEventListener('pointerup', stop);
           window.removeEventListener('pointercancel', stop);
         }
@@ -198,9 +198,17 @@ export default function Game() {
             </div>
           )}
           {playing && paused && (
-            <div className="ov">
-              <h2>TẠM DỪNG</h2>
-              <button className="go" onClick={() => setPaused(false)}>TIẾP TỤC</button>
+            <div className="pause-overlay" onClick={() => setPaused(false)} role="button" aria-label="Tiếp tục chơi">
+              <div className="pause-card">
+                <div className="pause-icon-circle">
+                  <div className="pause-bars">
+                    <span className="p-bar"></span>
+                    <span className="p-bar"></span>
+                  </div>
+                </div>
+                <span className="pause-title">TẠM DỪNG</span>
+                <span className="pause-hint">Chạm để tiếp tục</span>
+              </div>
             </div>
           )}
           {over && (
