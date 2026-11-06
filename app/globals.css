@@ -200,7 +200,7 @@ body {
 .bar button {
   font-size: clamp(10px, 2.7vw, 12px);
   padding: 5px 14px;
-  background: #2a2a88;
+  background: #e8402c;
   border: 2px solid #000;
   box-shadow: 0 2px 0 #000;
   border-radius: 14px;
@@ -209,6 +209,7 @@ body {
   font-weight: 700;
   touch-action: manipulation;
   cursor: pointer;
+  transition: background 0.05s, transform 0.05s, color 0.05s;
 }
 
 .bar button:active {
@@ -255,17 +256,19 @@ body {
   text-align: center;
 }
 
+/* Tất cả các button: Đỏ, khi bấm/chọn chuyển sang Vàng */
 button {
   font: inherit;
   font-weight: 700;
   color: #fff;
-  background: #3c3cc8;
+  background: #e8402c;
   border: 2px solid #000;
   box-shadow: 0 3px 0 #000;
   padding: 8px 12px;
   border-radius: 6px;
   touch-action: manipulation;
   cursor: pointer;
+  transition: background 0.05s, transform 0.05s, color 0.05s;
 }
 
 button:active, button.on {
@@ -295,7 +298,7 @@ button:active, button.on {
   touch-action: none;
 }
 
-/* Cụm 4 nút điều hướng D-PAD */
+/* Cụm 4 nút điều hướng D-PAD: Màu đỏ, khi nhấn chuyển vàng */
 .dpad {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -320,7 +323,7 @@ button:active, button.on {
   font-size: clamp(16px, 4vw, 22px);
   font-weight: 900;
   color: #fff;
-  background: #2a2a90;
+  background: #e8402c;
   border: 2px solid #000;
   box-shadow: none;
   padding: 0;
@@ -328,7 +331,7 @@ button:active, button.on {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-  transition: background 0.05s, transform 0.05s;
+  transition: background 0.05s, transform 0.05s, color 0.05s;
 }
 
 .d-btn:active {
@@ -359,7 +362,7 @@ button:active, button.on {
 
 .d-center {
   grid-area: center;
-  background: #1c1c68;
+  background: #b82e1e;
   border: 1px solid #000;
   border-radius: 2px;
   display: flex;
@@ -373,11 +376,11 @@ button:active, button.on {
   width: 32%;
   height: 32%;
   border-radius: 50%;
-  background: #101040;
+  background: #7a150b;
   border: 1px solid #000;
 }
 
-/* 2 nút hành động A và B */
+/* 2 nút hành động A và B: Màu đỏ, khi nhấn chuyển vàng */
 .ab {
   display: flex;
   gap: clamp(10px, 3.2vw, 18px);
@@ -409,7 +412,7 @@ button:active, button.on {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-  transition: background 0.05s, transform 0.05s, box-shadow 0.05s;
+  transition: background 0.05s, transform 0.05s, box-shadow 0.05s, color 0.05s;
 }
 
 .round:active {
