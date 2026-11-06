@@ -2,11 +2,30 @@ export const COLS = 8, ROWS = 16;
 export const COLORS = ['#e8402c', '#f8d838', '#3c78f8'];
 export type Cell = { c: number; v: boolean; l: string }; // l: liên kết với nửa viên kia: '' | L R U D
 export type Pill = { r: number; c: number; o: 0 | 1; a: number; b: number }; // o=0 ngang, o=1 dọc (a ở dưới, b ở trên)
-export type State = {
-  g: (Cell | null)[][]; p: Pill | null; next: [number, number];
-  ph: 'fall' | 'clear' | 'drop' | 'won' | 'lost'; t: number; acc: number;
-  level: number; speed: number; score: number; top: number; viruses: number; flash: number[][];
+
+export type Toss = {
+  a: number;
+  b: number;
+  t: number;   // thời gian còn lại (ms)
+  dur: number; // tổng thời gian quăng (ms)
 };
+
+export type State = {
+  g: (Cell | null)[][];
+  p: Pill | null;
+  next: [number, number];
+  ph: 'toss' | 'fall' | 'clear' | 'drop' | 'won' | 'lost';
+  t: number;
+  acc: number;
+  level: number;
+  speed: number;
+  score: number;
+  top: number;
+  viruses: number;
+  flash: number[][];
+  toss: Toss | null;
+};
+
 const rnd = (n: number) => Math.floor(Math.random() * n);
 const DIR: Record<string, number[]> = { L: [0, -1], R: [0, 1], U: [-1, 0], D: [1, 0] };
 const free = (g: State['g'], r: number, c: number) => c >= 0 && c < COLS && r < ROWS && (r < 0 ? c >= 2 && c <= 5 && r >= -1 : !g[r][c]);
@@ -28,19 +47,44 @@ export function newGame(level: number, speed: number, top = 0): State {
     if (run(g, r, c, 0, -1, k) + run(g, r, c, 0, 1, k) >= 2 || run(g, r, c, -1, 0, k) + run(g, r, c, 1, 0, k) >= 2) continue;
     g[r][c] = { c: k, v: true, l: '' }; placed++;
   }
-  const s: State = { g, p: null, next: [rnd(3), rnd(3)], ph: 'fall', t: 0, acc: 0, level, speed, score: 0, top, viruses: placed, flash: [] };
-  spawn(s);
+  const s: State = {
+    g,
+    p: null,
+    next: [rnd(3), rnd(3)],
+    ph: 'toss',
+    t: 700,
+    acc: 0,
+    level,
+    speed,
+    score: 0,
+    top,
+    viruses: placed,
+    flash: [],
+    toss: null,
+  };
+  startToss(s);
   return s;
 }
-function spawn(s: State) {
-  if (s.g[0][3] || s.g[0][4]) { s.ph = 'lost'; return; }
-  s.p = { r: 0, c: 3, o: 0, a: s.next[0], b: s.next[1] };
-  s.next = [rnd(3), rnd(3)]; s.ph = 'fall'; s.acc = 0;
+
+export function startToss(s: State) {
+  if (s.g[0][3] || s.g[0][4]) {
+    s.ph = 'lost';
+    return;
+  }
+  const a = s.next[0];
+  const b = s.next[1];
+  s.next = [rnd(3), rnd(3)];
+  s.ph = 'toss';
+  s.t = 700;
+  s.toss = { a, b, t: 700, dur: 700 };
+  s.p = null;
 }
+
 export const move = (s: State, dx: number) => {
   if (s.ph !== 'fall' || !s.p) return;
   const n = { ...s.p, c: s.p.c + dx }; if (fits(s, n)) s.p = n;
 };
+
 export const rotate = (s: State, cw: boolean) => {
   const p = s.p; if (s.ph !== 'fall' || !p) return;
   let n: Pill;
@@ -48,8 +92,10 @@ export const rotate = (s: State, cw: boolean) => {
   else { n = { ...p, o: 0, a: cw ? p.a : p.b, b: cw ? p.b : p.a }; if (!fits(s, n)) n = { ...n, c: n.c - 1 }; }
   if (fits(s, n)) s.p = n;
 };
+
 export function stepDown(s: State) {
-  const p = s.p; if (s.ph !== 'fall' || !p) return;
+  const p = s.p;
+  if (s.ph !== 'fall' || !p) return;
   const n = { ...p, r: p.r + 1 };
   if (fits(s, n)) { s.p = n; s.acc = 0; return; }
   const [A, B] = cells(p);
@@ -59,6 +105,7 @@ export function stepDown(s: State) {
   s.g[B[0]][B[1]] = { c: p.b, v: false, l: lb };
   s.p = null; check(s);
 }
+
 function matches(g: State['g']) {
   const out = new Set<number>();
   const scan = (len: number, wid: number, at: (i: number, j: number) => [number, number]) => {
@@ -73,12 +120,14 @@ function matches(g: State['g']) {
   scan(ROWS, COLS, (i, j) => [i, j]); scan(COLS, ROWS, (i, j) => [j, i]);
   return [...out].map((k) => [Math.floor(k / COLS), k % COLS]);
 }
+
 function check(s: State) {
   const m = matches(s.g);
   if (m.length) { s.flash = m; s.ph = 'clear'; s.t = 350; return; }
   if (!s.viruses) { s.ph = 'won'; return; }
-  spawn(s);
+  startToss(s);
 }
+
 function remove(s: State) {
   let k = 0;
   for (const [r, c] of s.flash) {
@@ -90,6 +139,7 @@ function remove(s: State) {
   for (let i = 0; i < k; i++) s.score += 100 * 2 ** Math.min(i, 5);
   s.top = Math.max(s.top, s.score); s.flash = [];
 }
+
 function fall(s: State) {
   let moved = false;
   for (let r = ROWS - 2; r >= 0; r--) for (let c = 0; c < COLS; c++) {
@@ -103,11 +153,41 @@ function fall(s: State) {
   }
   return moved;
 }
+
 export function update(s: State, dt: number) {
-  if (s.ph === 'fall') { s.acc += dt; if (s.acc >= [800, 550, 350][s.speed]) { s.acc = 0; stepDown(s); } }
-  else if (s.ph === 'clear' || s.ph === 'drop') {
-    s.t -= dt; if (s.t > 0) return;
-    if (s.ph === 'clear') { remove(s); s.ph = 'drop'; s.t = 90; }
-    else if (fall(s)) s.t = 90; else check(s);
+  if (s.ph === 'toss') {
+    s.t -= dt;
+    if (s.toss) s.toss.t = Math.max(0, s.t);
+    if (s.t <= 0) {
+      if (s.g[0][3] || s.g[0][4]) {
+        s.ph = 'lost';
+        s.toss = null;
+        return;
+      }
+      const a = s.toss ? s.toss.a : s.next[0];
+      const b = s.toss ? s.toss.b : s.next[1];
+      s.p = { r: 0, c: 3, o: 0, a, b };
+      s.toss = null;
+      s.ph = 'fall';
+      s.acc = 0;
+    }
+  } else if (s.ph === 'fall') {
+    s.acc += dt;
+    if (s.acc >= [800, 550, 350][s.speed]) {
+      s.acc = 0;
+      stepDown(s);
+    }
+  } else if (s.ph === 'clear' || s.ph === 'drop') {
+    s.t -= dt;
+    if (s.t > 0) return;
+    if (s.ph === 'clear') {
+      remove(s);
+      s.ph = 'drop';
+      s.t = 90;
+    } else if (fall(s)) {
+      s.t = 90;
+    } else {
+      check(s);
+    }
   }
 }

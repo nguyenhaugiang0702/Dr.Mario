@@ -1,7 +1,18 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { State, newGame, move, rotate, stepDown, update } from '../lib/engine';
-import { drawField, drawDoc, drawMag } from '../lib/draw';
+import { drawField, drawDoc, drawMag, drawToss } from '../lib/draw';
+import {
+  playMove,
+  playRotate,
+  playToss,
+  playClear,
+  playWin,
+  playLose,
+  haptic,
+  toggleMute,
+  initMute,
+} from '../lib/audio';
 
 const SPEEDS = ['CHẬM', 'VỪA', 'NHANH'];
 const pad = (n: number) => String(n).padStart(7, '0');
@@ -9,29 +20,51 @@ const pad = (n: number) => String(n).padStart(7, '0');
 export default function Game() {
   const [level, setLevel] = useState(10), [speed, setSpeed] = useState(1);
   const [playing, setPlaying] = useState(false), [paused, setPaused] = useState(false);
-  const [ui, setUi] = useState({ ph: 'fall', score: 0, top: 0, viruses: 0 });
+  const [soundOn, setSoundOn] = useState(true);
+  const [ui, setUi] = useState({ ph: 'toss', score: 0, top: 0, viruses: 0 });
   const S = useRef<State>(newGame(10, 1)), top = useRef(0), run = useRef(false), isPlaying = useRef(false);
   const cf = useRef<HTMLCanvasElement>(null), cd = useRef<HTMLCanvasElement>(null), cm = useRef<HTMLCanvasElement>(null);
+  const ct = useRef<HTMLCanvasElement>(null), boardRef = useRef<HTMLDivElement>(null);
+
   run.current = playing && !paused;
   isPlaying.current = playing;
 
   const reset = (l: number, sp: number) => { S.current = newGame(l, sp, top.current); };
   const act = (fn: (s: State) => void) => () => { if (run.current) fn(S.current); };
-  const L = act((s) => move(s, -1)), R = act((s) => move(s, 1)), D = act((s) => stepDown(s));
-  const U = act((s) => rotate(s, true));
-  const A = act((s) => rotate(s, true)), B = act((s) => rotate(s, false));
+
+  const L = act((s) => { move(s, -1); playMove(); haptic(10); });
+  const R = act((s) => { move(s, 1); playMove(); haptic(10); });
+  const D = act((s) => { stepDown(s); haptic(12); });
+  const U = act((s) => { rotate(s, true); playRotate(); haptic(15); });
+  const A = act((s) => { rotate(s, true); playRotate(); haptic(15); });
+  const B = act((s) => { rotate(s, false); playRotate(); haptic(15); });
 
   useEffect(() => {
     try { top.current = +(localStorage.getItem('drm-top') || 0); } catch {}
+    setSoundOn(!initMute());
+
     let raf = 0, last = performance.now(), sig = '';
     const ctx = (r: React.RefObject<HTMLCanvasElement | null>) => r.current!.getContext('2d')!;
+
     const loop = (now: number) => {
       const dt = Math.min(now - last, 50); last = now;
       const s = S.current;
       if (run.current) update(s, dt);
-      drawField(ctx(cf), s, now); drawDoc(ctx(cd), s.next, now); drawMag(ctx(cm), now);
+
+      drawField(ctx(cf), s, now);
+      drawDoc(ctx(cd), s.next, now, s.ph === 'toss');
+      drawMag(ctx(cm), now);
+      if (ct.current) drawToss(ct.current.getContext('2d')!, s, cd.current, cf.current, boardRef.current);
+
       const n = `${s.ph}|${s.score}|${s.top}|${s.viruses}`;
       if (n !== sig) {
+        if (run.current) {
+          if (s.ph === 'toss') playToss();
+          else if (s.ph === 'clear') playClear(1);
+          else if (s.ph === 'won') playWin();
+          else if (s.ph === 'lost') playLose();
+        }
+
         sig = n; setUi({ ph: s.ph, score: s.score, top: s.top, viruses: s.viruses });
         if (s.ph === 'won' || s.ph === 'lost') { top.current = s.top; try { localStorage.setItem('drm-top', String(s.top)); } catch {} }
       }
@@ -49,11 +82,11 @@ export default function Game() {
       }
       if (!run.current) return;
       const s = S.current;
-      if (e.key === 'ArrowLeft') move(s, -1);
-      else if (e.key === 'ArrowRight') move(s, 1);
-      else if (e.key === 'ArrowDown') stepDown(s);
-      else if (e.key === 'ArrowUp' || e.key === 'x' || e.key === 'X') rotate(s, true);
-      else if (e.key === 'z' || e.key === 'Z') rotate(s, false);
+      if (e.key === 'ArrowLeft') { move(s, -1); playMove(); }
+      else if (e.key === 'ArrowRight') { move(s, 1); playMove(); }
+      else if (e.key === 'ArrowDown') { stepDown(s); }
+      else if (e.key === 'ArrowUp' || e.key === 'x' || e.key === 'X') { rotate(s, true); playRotate(); }
+      else if (e.key === 'z' || e.key === 'Z') { rotate(s, false); playRotate(); }
       else return;
       e.preventDefault();
     };
@@ -95,15 +128,31 @@ export default function Game() {
     onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
   });
 
-  const start = (l = level) => { reset(l, speed); setPlaying(true); setPaused(false); };
+  const start = (l = level) => {
+    reset(l, speed);
+    setPlaying(true);
+    setPaused(false);
+    playToss();
+  };
   const over = playing && (ui.ph === 'won' || ui.ph === 'lost');
 
   return (
     <main className="app">
       {/* KHUNG CHƠI: 70% CHIỀU CAO THIẾT BỊ */}
       <section className="game-screen">
-        <h1 className="title">Dr.MARIO</h1>
-        <div className="board">
+        <div className="title-row">
+          <button
+            className="sound-btn"
+            onClick={() => setSoundOn(!toggleMute())}
+            aria-label="Bật tắt âm thanh"
+            title="Bật/Tắt âm thanh"
+          >
+            {soundOn ? '🔊' : '🔇'}
+          </button>
+          <h1 className="title">Dr.MARIO</h1>
+        </div>
+
+        <div ref={boardRef} className="board">
           <aside className="col col-left">
             <div className="clip">
               <p><span>KỶ LỤC</span></p>
@@ -130,6 +179,9 @@ export default function Game() {
               <p><span>VIRUS</span> <b>{ui.viruses}</b></p>
             </div>
           </aside>
+
+          {/* Lớp vẽ hiệu ứng quăng viên thuốc xoay trên không và rơi vào bình */}
+          <canvas ref={ct} className="toss-overlay" />
 
           {!playing && (
             <div className="ov">
