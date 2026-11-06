@@ -15,7 +15,6 @@ import {
 } from '../lib/audio';
 
 const SPEEDS = ['CHẬM', 'VỪA', 'NHANH'];
-const pad = (n: number) => String(n).padStart(7, '0');
 
 export default function Game() {
   const [level, setLevel] = useState(10), [speed, setSpeed] = useState(1);
@@ -152,33 +151,30 @@ export default function Game() {
           <h1 className="title">Dr.MARIO</h1>
         </div>
 
-        <div ref={boardRef} className="board">
-          <aside className="col col-left">
-            <div className="clip">
-              <p><span>KỶ LỤC</span></p>
-              <p className="clip-num">{pad(ui.top)}</p>
-              <p><span>ĐIỂM</span></p>
-              <p className="clip-num">{pad(ui.score)}</p>
-            </div>
-            <div className="mag-wrap">
-              <canvas ref={cm} width={64} height={64} className="px mag" />
-            </div>
-          </aside>
+        {/* Dòng thông số dạng text nằm ngang, không kẻ bảng */}
+        <div className="status-bar">
+          <span className="stat-item">MÀN <b>{level}</b></span>
+          <span className="stat-sep">•</span>
+          <span className="stat-item">TỐC ĐỘ <b>{SPEEDS[speed]}</b></span>
+          <span className="stat-sep">•</span>
+          <span className="stat-item">VIRUS <b>{ui.viruses}</b></span>
+        </div>
 
+        <div ref={boardRef} className="board">
+          {/* Kính lúp virus bên trái */}
+          <div className="side-panel side-left">
+            <canvas ref={cm} width={64} height={64} className="px mag" />
+          </div>
+
+          {/* Khung chứa thuốc ở giữa - ĐƯỢC PHÓNG TO TỐI ĐA */}
           <div className="field-wrap">
             <canvas ref={cf} width={72} height={152} className="px field" />
           </div>
 
-          <aside className="col col-right">
-            <div className="doc-wrap">
-              <canvas ref={cd} width={64} height={48} className="px doc" />
-            </div>
-            <div className="clip">
-              <p><span>MÀN</span> <b>{level}</b></p>
-              <p><span>TỐC ĐỘ</span> <b>{SPEEDS[speed]}</b></p>
-              <p><span>VIRUS</span> <b>{ui.viruses}</b></p>
-            </div>
-          </aside>
+          {/* Bác sĩ Mario bên phải */}
+          <div className="side-panel side-right">
+            <canvas ref={cd} width={64} height={48} className="px doc" />
+          </div>
 
           {/* Lớp vẽ hiệu ứng quăng viên thuốc xoay trên không và rơi vào bình */}
           <canvas ref={ct} className="toss-overlay" />
