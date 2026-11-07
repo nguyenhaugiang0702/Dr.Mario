@@ -464,7 +464,7 @@ button.on {
 }
 
 .go {
-  background: #e8402c;
+  background: #19d60b;
   font-size: clamp(14px, 4vw, 17px);
   padding: 8px 22px;
 }
