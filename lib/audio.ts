@@ -373,6 +373,31 @@ export function playToss() {
   } catch {}
 }
 
+// 4b. Tiếng báo hiệu tăng tốc độ sau mỗi 10 viên thuốc (chuỗi nốt arpeggio vút lên đặc trưng của Dr. Mario)
+export function playSpeedUp() {
+  if (muted) return;
+  try {
+    const ac = getAudioContext();
+    if (!ac) return;
+    // Chuỗi hợp âm vút lên: C5, E5, G5, C6, E6, G6
+    const freqs = [523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98];
+    const start = ac.currentTime;
+    freqs.forEach((freq, idx) => {
+      const t = start + idx * 0.045;
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(0.12, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+      osc.connect(gain);
+      gain.connect(ac.destination);
+      osc.start(t);
+      osc.stop(t + 0.07);
+    });
+  } catch {}
+}
+
 // 5. Tiếng tiêu diệt virus / ăn điểm (kèm combo)
 export function playClear(combo = 1) {
   if (muted) return;

@@ -80,7 +80,7 @@ export function drawDoc(x: C, next: [number, number], t: number, isToss = false)
   }
 }
 
-export function drawMag(x: C, t: number) {
+export function drawMag(x: C, t: number, s?: State) {
   x.clearRect(0, 0, 64, 64);
   const disc = (r: number, col: string) => {
     x.fillStyle = col;
@@ -92,7 +92,38 @@ export function drawMag(x: C, t: number) {
   disc(25, '#18186a');
   x.fillStyle = '#a06028';
   for (let i = 0; i < 14; i++) x.fillRect(12 - i, 48 + i, 4, 3);
-  [[10, 26, 1], [22, 10, 2], [32, 30, 0]].forEach(([px, py, k], i) =>
+
+  // Kiểm tra virus còn lại theo từng màu (0: đỏ, 1: vàng, 2: xanh)
+  let hasYellow = true, hasBlue = true, hasRed = true;
+  if (s) {
+    if (s.viruses <= 0 || s.ph === 'won') {
+      hasYellow = false;
+      hasBlue = false;
+      hasRed = false;
+    } else {
+      let redCount = 0, yellowCount = 0, blueCount = 0;
+      for (let r = 0; r < s.g.length; r++) {
+        for (let c = 0; c < s.g[r].length; c++) {
+          const cell = s.g[r][c];
+          if (cell && cell.v) {
+            if (cell.c === 0) redCount++;
+            else if (cell.c === 1) yellowCount++;
+            else if (cell.c === 2) blueCount++;
+          }
+        }
+      }
+      hasRed = redCount > 0;
+      hasYellow = yellowCount > 0;
+      hasBlue = blueCount > 0;
+    }
+  }
+
+  const list: [number, number, number][] = [];
+  if (hasYellow) list.push([10, 26, 1]);
+  if (hasBlue) list.push([22, 10, 2]);
+  if (hasRed) list.push([32, 30, 0]);
+
+  list.forEach(([px, py, k], i) =>
     virus(x, px, py + Math.round(Math.sin(t / 200 + i * 2) * 2), COLORS[k], Math.floor(t / 300 + i) % 2, 2)
   );
 }

@@ -12,6 +12,7 @@ import {
   playMove,
   playRotate,
   playToss,
+  playSpeedUp,
   playClear,
   playWin,
   playLose,
@@ -38,7 +39,7 @@ export default function Game() {
   const [playing, setPlaying] = useState(false), [paused, setPaused] = useState(false);
   const [soundOn, setSoundOn] = useState(true); // Mặc định luôn bật loa khi hiển thị trang chủ
   const [musicType, setMusicType] = useState<MusicType>('fever');
-  const [ui, setUi] = useState({ ph: 'toss', score: 0, top: 0, viruses: 0 });
+  const [ui, setUi] = useState({ ph: 'toss', score: 0, top: 0, viruses: 0, speedStep: 0 });
   const [savedGame, setSavedGame] = useState<SavedGame | null>(null);
 
   const screenRef = useRef<'home' | 'game'>('home');
@@ -152,6 +153,7 @@ export default function Game() {
       score: saved.state.score,
       top: saved.state.top,
       viruses: saved.state.viruses,
+      speedStep: Math.floor(Math.max(0, (saved.state.pillCount || 1) - 1) / 10),
     });
 
     setScreen('game');
@@ -204,20 +206,28 @@ export default function Game() {
       if (cf.current && cd.current && cm.current) {
         drawField(cf.current.getContext('2d')!, s, now);
         drawDoc(cd.current.getContext('2d')!, s.next, now, s.ph === 'toss');
-        drawMag(cm.current.getContext('2d')!, now);
+        drawMag(cm.current.getContext('2d')!, now, s);
         if (ct.current) drawToss(ct.current.getContext('2d')!, s, cd.current, cf.current, boardRef.current);
       }
 
-      const n = `${s.ph}|${s.score}|${s.top}|${s.viruses}`;
+      const speedStep = Math.floor(Math.max(0, (s.pillCount || 1) - 1) / 10);
+      const n = `${s.ph}|${s.score}|${s.top}|${s.viruses}|${speedStep}`;
       if (n !== sig) {
         if (run.current) {
-          if (s.ph === 'toss') playToss();
+          if (s.ph === 'toss') {
+            if (s.speedUpTrigger) {
+              s.speedUpTrigger = false;
+              playSpeedUp();
+            } else {
+              playToss();
+            }
+          }
           else if (s.ph === 'clear') playClear(1);
           else if (s.ph === 'won') playWin();
           else if (s.ph === 'lost') playLose();
         }
 
-        sig = n; setUi({ ph: s.ph, score: s.score, top: s.top, viruses: s.viruses });
+        sig = n; setUi({ ph: s.ph, score: s.score, top: s.top, viruses: s.viruses, speedStep });
         if (s.ph === 'won' || s.ph === 'lost') {
           top.current = s.top;
           try { localStorage.setItem('drm-top', String(s.top)); } catch { }
@@ -482,7 +492,17 @@ export default function Game() {
             <div className="status-bar">
               <span className="stat-item">MÀN <b>{level}</b></span>
               <span className="stat-sep">•</span>
-              <span className="stat-item">TỐC ĐỘ <b>{SPEEDS[speed]}</b></span>
+              <span className="stat-item">
+                TỐC ĐỘ <b>{SPEEDS[speed]}</b>
+                {ui.speedStep > 0 && (
+                  <span
+                    style={{ color: '#f8d838', marginLeft: '4px', fontSize: '0.85em', fontWeight: 'bold' }}
+                    title={`Tốc độ đã tăng ${ui.speedStep} bậc (mỗi 10 viên)`}
+                  >
+                    (+{ui.speedStep})
+                  </span>
+                )}
+              </span>
               <span className="stat-sep">•</span>
               <span className="stat-item">VIRUS <b>{ui.viruses}</b></span>
             </div>

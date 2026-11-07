@@ -24,7 +24,21 @@ export type State = {
   viruses: number;
   flash: number[][];
   toss: Toss | null;
+  pillCount: number;
+  speedUpTrigger?: boolean;
 };
+
+export function getDropInterval(speed: number, pillCount = 0): number {
+  const step = Math.floor(Math.max(0, pillCount - 1) / 10);
+  // Cân chỉnh tốc độ tiệm cận bản gốc NES nhưng tối ưu thêm độ trễ cho cảm ứng điện thoại:
+  // - CHẬM:  720ms (gốc NES 667ms, cũ 800ms) - giảm 35ms / 10 viên, sàn 220ms
+  // - VỪA:   450ms (gốc NES 333ms, cũ 550ms) - giảm 25ms / 10 viên, sàn 160ms
+  // - NHANH: 280ms (gốc NES 233ms, cũ 350ms) - giảm 18ms / 10 viên, sàn 110ms
+  const base = [720, 450, 280][speed] ?? 450;
+  const dec = [35, 25, 18][speed] ?? 25;
+  const min = [220, 160, 110][speed] ?? 160;
+  return Math.max(min, base - step * dec);
+}
 
 const rnd = (n: number) => Math.floor(Math.random() * n);
 const DIR: Record<string, number[]> = { L: [0, -1], R: [0, 1], U: [-1, 0], D: [1, 0] };
@@ -61,6 +75,8 @@ export function newGame(level: number, speed: number, top = 0): State {
     viruses: placed,
     flash: [],
     toss: null,
+    pillCount: 0,
+    speedUpTrigger: false,
   };
   startToss(s);
   return s;
@@ -70,6 +86,10 @@ export function startToss(s: State) {
   if (s.g[0][3] || s.g[0][4]) {
     s.ph = 'lost';
     return;
+  }
+  s.pillCount = (s.pillCount || 0) + 1;
+  if (s.pillCount > 1 && (s.pillCount - 1) % 10 === 0) {
+    s.speedUpTrigger = true;
   }
   const a = s.next[0];
   const b = s.next[1];
@@ -173,7 +193,7 @@ export function update(s: State, dt: number) {
     }
   } else if (s.ph === 'fall') {
     s.acc += dt;
-    if (s.acc >= [800, 550, 350][s.speed]) {
+    if (s.acc >= getDropInterval(s.speed, s.pillCount)) {
       s.acc = 0;
       stepDown(s);
     }
