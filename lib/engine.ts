@@ -54,12 +54,49 @@ const run = (g: State['g'], r: number, c: number, dr: number, dc: number, k: num
 export function newGame(level: number, speed: number, top = 0): State {
   const g: State['g'] = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
   const n = Math.min(4 * (level + 1), 84), h = Math.min(10 + Math.max(0, (level - 14) >> 1), 12);
+
+  // Phân bổ màu xoay vòng (0: đỏ, 1: vàng, 2: xanh) để luôn đảm bảo xuất hiện đủ 3 màu virus trong mọi màn
+  const colorsToPlace: number[] = [];
+  const startColor = rnd(3);
+  for (let i = 0; i < n; i++) {
+    colorsToPlace.push((startColor + i) % 3);
+  }
+
   let placed = 0, guard = 0;
   while (placed < n && guard++ < 8000) {
-    const r = ROWS - 1 - rnd(h), c = rnd(COLS), k = rnd(3);
+    const r = ROWS - 1 - rnd(h), c = rnd(COLS);
     if (g[r][c]) continue;
+    const k = colorsToPlace[placed];
     if (run(g, r, c, 0, -1, k) + run(g, r, c, 0, 1, k) >= 2 || run(g, r, c, -1, 0, k) + run(g, r, c, 1, 0, k) >= 2) continue;
     g[r][c] = { c: k, v: true, l: '' }; placed++;
+  }
+
+  // Bảo đảm tuyệt đối: nếu số lượng virus >= 3 thì luôn có ít nhất 1 con cho mỗi màu
+  if (placed >= 3) {
+    for (let targetColor = 0; targetColor < 3; targetColor++) {
+      let hasTarget = false;
+      for (let r = 0; r < ROWS && !hasTarget; r++) {
+        for (let c = 0; c < COLS && !hasTarget; c++) {
+          if (g[r][c]?.v && g[r][c]!.c === targetColor) hasTarget = true;
+        }
+      }
+      if (!hasTarget) {
+        outer: for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            const cell = g[r][c];
+            if (cell && cell.v) {
+              const oldColor = cell.c;
+              cell.c = targetColor;
+              if (run(g, r, c, 0, -1, targetColor) + run(g, r, c, 0, 1, targetColor) < 2 &&
+                  run(g, r, c, -1, 0, targetColor) + run(g, r, c, 1, 0, targetColor) < 2) {
+                break outer;
+              }
+              cell.c = oldColor;
+            }
+          }
+        }
+      }
+    }
   }
   const s: State = {
     g,
